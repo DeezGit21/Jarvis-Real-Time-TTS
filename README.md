@@ -19,6 +19,16 @@ and one static page.
 Extracted from the [jarvis-deck](https://github.com/DeezGit21/jarvis-deck)
 project (MIT).
 
+## Want the whole dashboard?
+
+This repo is the voice loop only. The orb in the image above lives in
+**[jarvis-deck](https://github.com/DeezGit21/jarvis-deck)** — the full Jarvis
+ops dashboard this was extracted from: a personal command deck with a real-time
+neural orb + 3D memory galaxy, daily briefings, a task/goal board, service
+health and auto-remediation, revenue telemetry, a console with `/`-commands,
+persistent memory, and this same voice loop wired through all of it. If you
+like the voice, that's where it gets superpowers.
+
 ## What it actually does
 
 1. **Push-to-talk.** Hold **SPACE** (or the mic button); the browser's
@@ -130,16 +140,6 @@ web/style.css   dark console styling
   format and masks your fix. Test with fresh text.
 - The mic leg cannot be tested headlessly (SpeechRecognition needs real
   audio); everything else is testable with curl.
-
-## Want the whole dashboard?
-
-This repo is the voice loop only. The orb in the image above lives in
-**[jarvis-deck](https://github.com/DeezGit21/jarvis-deck)** — the full Jarvis
-ops dashboard this was extracted from: a personal command deck with a real-time
-neural orb + 3D memory galaxy, daily briefings, a task/goal board, service
-health and auto-remediation, revenue telemetry, a console with `/`-commands,
-persistent memory, and this same voice loop wired through all of it. If you
-like the voice, that's where it gets superpowers.
 
 ## More open-source from the same builder
 

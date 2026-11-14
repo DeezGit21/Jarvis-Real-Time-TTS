@@ -24,42 +24,47 @@ const Tts = {
   },
 
   // Streaming GET: the Audio element starts playing as edge-tts chunks
-  // arrive — first sound well under a second. Falls back to the browser
-  // speechSynthesis voice only on a genuine load failure. A watchdog covers
-  // the cold-start hang: if edge-tts synthesis stalls, readyState stays 0 and
-  // the queue would wedge forever without it.
+  // arrive — first sound well under a second. There is deliberately NO
+  // speechSynthesis fallback: this page is served by the same server that
+  // synthesizes, so if /tts fails the whole app is down and a Microsoft
+  // system voice blurting over the dead JARVIS voice is worse than silence.
+  // One silent retry covers transient edge-tts hiccups; a second failure
+  // surfaces as an inline [tts unavailable] note and the queue drains on.
+  // A watchdog covers cold-start hangs that would otherwise wedge the queue
+  // forever (readyState stuck at 0).
   async _speakAsync(clean, onEnd) {
-    const done = () => { if (onEnd) { try { onEnd() } catch { /* ignore */ } } }
-    try {
-      const audio = new Audio('/tts?text=' + encodeURIComponent(clean))
-      this._audio = audio
-      audio.onended = done
-      audio.onerror = () => { if (this._audio === audio) this._fallbackSpeak(clean, done) }
-      const watchdog = setTimeout(() => {
-        if (this._audio === audio && (audio.paused || audio.currentTime <= 0 || audio.readyState < 2)) {
-          try { audio.onerror() } catch { /* ignore */ }
-        }
-      }, 6000)
-      audio.onplaying = () => clearTimeout(watchdog)
-      await audio.play()
-      return
-    } catch (err) {
-      // stop() interrupting a pending play() rejects with AbortError AFTER
-      // _audio was swapped — that is not an endpoint failure. Letting it fall
-      // back there makes the browser voice talk OVER the real audio.
-      if (this._audio !== audio || (err && err.name === 'AbortError')) return
-    }
-    this._fallbackSpeak(clean, done)
+    await this._attempt(clean, onEnd, 0)
   },
 
-  _fallbackSpeak(clean, onEnd) {
+  async _attempt(clean, onEnd, attempt) {
+    const done = () => { if (onEnd) { try { onEnd() } catch { /* ignore */ } } }
+    const giveUp = () => {
+      if (attempt === 0) this._attempt(clean, onEnd, 1)  // one silent retry
+      else this._fail(done)
+    }
     try {
-      const u = new SpeechSynthesisUtterance(clean)
-      u.rate = 1.05
-      u.onend = onEnd
-      u.onerror = onEnd
-      window.speechSynthesis.speak(u)
-    } catch { if (onEnd) onEnd() }
+      const audio = new Audio('/tts?text=' + encodeURIComponent(clean) + (attempt ? '&r=1' : ''))
+      this._audio = audio
+      audio.onended = done
+      audio.onerror = () => { if (this._audio === audio) giveUp() }
+      const watchdog = setTimeout(() => {
+        if (this._audio === audio && !audio.buffered.length && audio.currentTime <= 0 && audio.readyState < 2) {
+          giveUp()
+        }
+      }, 8000)
+      audio.onplaying = () => clearTimeout(watchdog)
+      await audio.play()
+    } catch (err) {
+      // stop() interrupting a pending play() rejects with AbortError AFTER
+      // _audio was swapped — that is barge-in cleanup, not a failure.
+      if (this._audio !== audio || (err && err.name === 'AbortError')) return
+      giveUp()
+    }
+  },
+
+  _fail(done) {
+    noteError('tts unavailable — check the server')
+    done()
   },
 
   // Sentence queue: events from /voice/chat are spoken back-to-back so the
@@ -98,10 +103,8 @@ const Tts = {
     try {
       const audio = new Audio('/tts?text=' + encodeURIComponent(line))
       this._audio = audio
-      audio.play().catch(err => {
-        if (this._audio === audio && (!err || err.name !== 'AbortError')) this._fallbackSpeak(line, null)
-      })
-    } catch { this._fallbackSpeak(line, null) }
+      audio.play().catch(() => {})  // no ack → silence; never the system voice
+    } catch { /* ignore */ }
   }
 }
 
@@ -144,6 +147,14 @@ function updateLast(text) {
     t.textContent = text
     consoleEl.scrollTop = consoleEl.scrollHeight
   }
+}
+
+function noteError(text) {
+  const div = document.createElement('div')
+  div.className = 'msg err'
+  div.textContent = '[' + text + ']'
+  consoleEl.append(div)
+  consoleEl.scrollTop = consoleEl.scrollHeight
 }
 
 // ---------------------------------------------------------------- stream in

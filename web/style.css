@@ -40,6 +40,7 @@ h1 { font-size: 22px; letter-spacing: 6px; color: var(--accent); font-weight: 60
 .msg { max-width: 88%; }
 .msg .who { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
 .msg.you { align-self: flex-end; text-align: right; }
+.msg.err { color: #e05b5b; font-size: 13px; }
 .msg .text { white-space: pre-wrap; }
 .msg .text .cursor { color: var(--accent); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0 } }
@@ -54,6 +55,11 @@ h1 { font-size: 22px; letter-spacing: 6px; color: var(--accent); font-weight: 60
 .mic:disabled { opacity: .45; cursor: default; }
 .mic.listening { border-color: var(--gold); color: var(--gold); }
 #typeForm { display: flex; gap: 8px; flex: 1.2; }
+@media (max-width: 540px) {
+  .bar { flex-wrap: wrap; }
+  .mic { flex: 1 1 100%; }
+  #typeForm { flex: 1; }
+}
 #typeInput {
   flex: 1; background: var(--panel); border: 1px solid var(--edge);
   border-radius: 12px; padding: 0 14px; color: var(--text); font: inherit;
