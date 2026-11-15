@@ -88,6 +88,10 @@ python server.py            # http://localhost:8899
 Open http://localhost:8899 in **Chrome or Edge** (mic input needs the Web
 Speech API; every other browser can type instead).
 
+**Want it to sound more like JARVIS from the MCU? Use the Gemini API key** —
+drop it in `.env` and add `provider=gemini` to `/tts` for the proper
+RP-butler voice (the default edge voice is free and works with no key).
+
 No API key? The TTS half still works:
 
 ```bash
@@ -125,11 +129,13 @@ web/style.css   dark console styling
 
 ## Gotchas baked in (learned the hard way so you don't have to)
 
-- **AbortError ≠ endpoint failure.** `stop()`/barge-in interrupting a pending
-  `audio.play()` rejects with `AbortError` *after* the audio handle was
-  swapped. Falling back to `speechSynthesis` there makes the browser voice
-  talk *over* the real one (the classic double-voice bug). Only a genuine
-  load failure falls back.
+- **No speechSynthesis fallback. Ever.** This page is served by the same
+  server that synthesizes, so if `/tts` fails the app is down — and a
+  Microsoft system voice blurting over the dead Jarvis voice is worse than
+  silence. Genuine failures retry once, then surface an inline
+  `[tts unavailable]` note while the queue drains on. (The classic
+  double-voice bug came from `stop()`'s `AbortError` being mistaken for a
+  load failure — it rejects *after* the audio handle was swapped.)
 - **Never half-speak a marker.** A sentence arriving while `[[` is streaming
   is withheld until the marker resolves; if no complete marker appears, the
   withheld sentences flush and are spoken after all.
