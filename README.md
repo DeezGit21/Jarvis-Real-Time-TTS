@@ -123,7 +123,7 @@ curl -o test.mp3 "http://localhost:8899/tts?text=Right%20away%2C%20sir"
 | `GEMINI_TTS_VOICE` | `Charon` | gemini voice |
 | `HERMES_AGENT` | `1` | when Jarvis emits `[[agent]] <cmd>`, run it locally via the Hermes one-shot agent (`hermes -z <cmd>`) and feed the report back so Jarvis speaks a summary. `0` = hand-off-only |
 | `HERMES_BIN` | `hermes` | hermes CLI on PATH |
-| `HERMES_IN` | repo root | working directory Hermes runs in |
+| `HERMES_IN` | launch directory (server's cwd) | working directory Hermes runs in |
 | `HERMES_TIMEOUT` | `600` | seconds before the agent run is abandoned |
 
 ## Files

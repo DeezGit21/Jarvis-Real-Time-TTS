@@ -75,11 +75,13 @@ GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
 # ---------------------------------------------------------------- agent handoff
 # When Jarvis answers with [[agent]] <command>, the command is executed locally
 # by the Hermes one-shot agent (hermes -z), which has the full local toolset
-# (files, shell, browser, MCP). HERMES_IN is the workspace Hermes runs in;
+# (files, shell, browser, MCP). HERMES_IN is the workspace Hermes runs in —
+# it defaults to the directory the server was LAUNCHED from (its cwd), so
+# start server.py wherever you want Hermes to work.
 # the command is an INSTRUCTION, not a shell command — Hermes decides how to
 # perform it. Set HERMES_AGENT=0 to fall back to the hand-off-only behavior.
 HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
-HERMES_IN = os.environ.get("HERMES_IN", os.path.dirname(os.path.abspath(__file__)))
+HERMES_IN = os.environ.get("HERMES_IN") or os.getcwd()
 HERMES_TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "600"))
 HERMES_AGENT = os.environ.get("HERMES_AGENT", "1") != "0"
 
