@@ -33,6 +33,7 @@ MIT licensed.
 
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -84,6 +85,11 @@ HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
 HERMES_IN = os.environ.get("HERMES_IN") or os.getcwd()
 HERMES_TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "600"))
 HERMES_AGENT = os.environ.get("HERMES_AGENT", "1") != "0"
+
+# Spoken acknowledgement Jarvis says the moment a task is delegated to the
+# Hermes agent — picked at random so it doesn't sound canned. These play from
+# the TTS cache (short lines), so they land instantly while hermes -z runs.
+AGENT_ACKS = ("Delegating to Hermes Agent, sir.", "Hermes executing now, sir.")
 
 
 def _run_hermes(cmd: str) -> str:
@@ -251,6 +257,9 @@ def voice_chat(body: dict = Body(...)):
             del _history[:-24]
             yield ev({"t": "agent", "cmd": cmd})
             if HERMES_AGENT:
+                # ---- spoken ack first (instant, cached), so Jarvis verbally
+                # ---- acknowledges the delegation while hermes -z works
+                yield ev({"t": "s", "text": random.choice(AGENT_ACKS)})
                 # ---- execute locally via the Hermes one-shot agent, then feed
                 # ---- the report back so Jarvis can summarize it for speech
                 result = _run_hermes(cmd)

@@ -52,7 +52,10 @@ like the voice, that's where it gets superpowers.
    an answer, it replies with exactly `[[agent]] <command>`. Those sentences
    are **withheld from speech** — even mid-stream, before the marker is
    complete — and the command is executed locally by the Hermes one-shot
-   agent (`hermes -z <instruction>`, full toolset, local file access). The
+   agent (`hermes -z <instruction>`, full toolset, local file access). Jarvis
+   opens with a spoken acknowledgement — *"Delegating to Hermes Agent, sir."*
+   or *"Hermes executing now, sir."* — that plays instantly from the TTS
+   cache while the agent works. The
    agent's report comes back as `{t:'agent_result'}`, is fed into the
    conversation, and a second turn has Jarvis **speak a 1–2 sentence summary
    of the outcome**. Jarvis never reads a command out loud; `HERMES_AGENT=0`
@@ -154,10 +157,13 @@ web/style.css   dark console styling
   format and masks your fix. Test with fresh text.
 - **`[[agent]]` commands actually execute now.** When Jarvis hands off, the
   server runs `hermes -z "<instruction>"` (the Hermes one-shot agent — full
-  local toolset, runs in `HERMES_IN`), emits `{t:'agent_result',text}` with the
+  local toolset, runs in `HERMES_IN`, which defaults to the directory the
+  server was launched from), emits `{t:'agent_result',text}` with the
   report, and streams a second turn so Jarvis speaks a 1–2 sentence summary of
-  the outcome. The command is an *instruction*, not a shell command — Hermes
-  decides how to perform it. `HERMES_AGENT=0` returns to hand-off-only.
+  the outcome. Jarvis first speaks a random acknowledgement —
+  "Delegating to Hermes Agent, sir." / "Hermes executing now, sir." — while
+  the agent works. The command is an *instruction*, not a shell command —
+  Hermes decides how to perform it. `HERMES_AGENT=0` returns to hand-off-only.
 - The mic leg cannot be tested headlessly (SpeechRecognition needs real
   audio); everything else is testable with curl.
 
