@@ -34,6 +34,8 @@ MIT licensed.
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 import urllib.request
 from pathlib import Path
@@ -69,6 +71,44 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "en-GB-RyanNeural")
 TTS_RATE = os.environ.get("TTS_RATE", "+4%")
 GEMINI_TTS_VOICE = os.environ.get("GEMINI_TTS_VOICE", "Charon")
 GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+
+# ---------------------------------------------------------------- agent handoff
+# When Jarvis answers with [[agent]] <command>, the command is executed locally
+# by the Hermes one-shot agent (hermes -z), which has the full local toolset
+# (files, shell, browser, MCP). HERMES_IN is the workspace Hermes runs in;
+# the command is an INSTRUCTION, not a shell command — Hermes decides how to
+# perform it. Set HERMES_AGENT=0 to fall back to the hand-off-only behavior.
+HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
+HERMES_IN = os.environ.get("HERMES_IN", os.path.dirname(os.path.abspath(__file__)))
+HERMES_TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "600"))
+HERMES_AGENT = os.environ.get("HERMES_AGENT", "1") != "0"
+
+
+def _run_hermes(cmd: str) -> str:
+    """Run one Hermes one-shot turn for Jarvis's [[agent]] handoff. Returns the
+    agent's report text (never raises)."""
+    exe = shutil.which(HERMES_BIN) or HERMES_BIN
+    try:
+        proc = subprocess.run(
+            [exe, "-z", cmd, "--in", HERMES_IN],
+            capture_output=True, text=True, timeout=HERMES_TIMEOUT)
+        out = (proc.stdout or "").strip()
+        if proc.returncode != 0 and not out:
+            err = (proc.stderr or "").strip().splitlines()[-1:]
+            return "[agent failed] " + (err[0] if err else f"exit {proc.returncode}")
+        return out or "[agent produced no output]"
+    except FileNotFoundError:
+        return "[agent failed] hermes CLI not found on PATH (set HERMES_BIN)"
+    except subprocess.TimeoutExpired:
+        return f"[agent failed] hermes timed out after {HERMES_TIMEOUT}s"
+    except Exception as e:
+        return "[agent failed] " + str(e)[:300]
+
+
+AGENT_SUMMARY_INSTR = (
+    "\n\nThe Hermes agent has just executed the command and returned a report "
+    "(appended to the history). Summarize the OUTCOME for speech in 1-2 short "
+    "sentences. If it failed, say so plainly. Never speak the report verbatim.")
 
 # ---------------------------------------------------------------- voice chat
 
@@ -137,67 +177,100 @@ def voice_chat(body: dict = Body(...)):
 
     def generate():
         started = time.time()
-        full = ""
-        buf = ""
-        held: list[str] = []  # sentences withheld once "[[" appears — could be
-        try:                  # an [[agent]] marker; never speak that aloud
-            messages = ([{"role": "system", "content": VOICE_SYSTEM}]
-                        + _history[-16:]
-                        + [{"role": "user", "content": query}])
-            resp = _openrouter_stream(messages)
+
+        def stream_turn(messages, box):
+            """One streaming model turn. Yields NDJSON event dicts; on return
+            box[0] holds the reply text and box[1] True if an [[agent]] marker
+            appeared. Sentences are withheld once "[[" appears — never speak
+            a marker aloud."""
+            full = ""
+            buf = ""
+            held: list[str] = []
             try:
-                for raw in resp:
-                    line = raw.decode("utf-8", errors="ignore").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content")
-                    if not delta:
-                        continue
-                    full += delta
-                    buf += delta
-                    sents, buf = _drain_sentences(buf)
-                    if "[[" in full:
-                        held.extend(sents)
-                    else:
-                        for s in sents:
-                            yield ev({"t": "s", "text": s, "at": round(time.time() - started, 2)})
-                if buf.strip() and "[[" not in full:
-                    yield ev({"t": "s", "text": buf.strip()})
-            finally:
-                resp.close()
-        except Exception as e:  # surface mid-stream as an event, not a broken pipe
-            msg = str(e)[:300]
-            if full:
-                yield ev({"t": "done", "partial": True, "err": msg})
-            else:
-                yield ev({"t": "err", "msg": msg})
-            return
+                resp = _openrouter_stream(messages)
+                try:
+                    for raw in resp:
+                        line = raw.decode("utf-8", errors="ignore").strip()
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content")
+                        if not delta:
+                            continue
+                        full += delta
+                        buf += delta
+                        sents, buf = _drain_sentences(buf)
+                        if "[[" in full:
+                            held.extend(sents)
+                        else:
+                            for s in sents:
+                                yield {"t": "s", "text": s, "at": round(time.time() - started, 2)}
+                    if buf.strip() and "[[" not in full:
+                        yield {"t": "s", "text": buf.strip()}
+                finally:
+                    resp.close()
+            except Exception as e:  # surface mid-stream as an event, not a broken pipe
+                msg = str(e)[:300]
+                if full:
+                    yield {"t": "done", "partial": True, "err": msg}
+                else:
+                    yield {"t": "err", "msg": msg}
+                return
+            box[0] = full
+            m = re.search(r"\[\[agent\]\]\s*(.+)", full)
+            box[1] = bool(m)
+            if not m:
+                # "[[" appeared but no complete marker — flush the withheld sentences
+                for s in held:
+                    yield {"t": "s", "text": s}
+                if buf.strip():
+                    yield {"t": "s", "text": buf.strip()}
+                if not full.strip():
+                    yield {"t": "err", "msg": "empty reply"}
+
+        # ---- turn 1: Jarvis answers (or hands the action to the agent)
+        box = ["", False]
+        for e in stream_turn([{"role": "system", "content": VOICE_SYSTEM}]
+                             + _history[-16:]
+                             + [{"role": "user", "content": query}], box):
+            yield ev(e)
+        full = box[0]
         m = re.search(r"\[\[agent\]\]\s*(.+)", full)
         if m:
+            cmd = m.group(1).strip()
             _history.append({"role": "user", "content": query})
-            _history.append({"role": "assistant", "content": "[handed to agent: " + m.group(1).strip() + "]"})
+            _history.append({"role": "assistant", "content": "[[agent]] " + cmd})
             del _history[:-24]
-            yield ev({"t": "agent", "cmd": m.group(1).strip()})
+            yield ev({"t": "agent", "cmd": cmd})
+            if HERMES_AGENT:
+                # ---- execute locally via the Hermes one-shot agent, then feed
+                # ---- the report back so Jarvis can summarize it for speech
+                result = _run_hermes(cmd)
+                yield ev({"t": "agent_result", "text": result[:4000]})
+                _history.append({"role": "system", "content":
+                                 "[Hermes agent executed the command and reported:\n" + result[:4000] + "]"})
+                box2 = ["", False]
+                for e in stream_turn([{"role": "system", "content": VOICE_SYSTEM + AGENT_SUMMARY_INSTR}]
+                                     + _history[-16:]
+                                     + [{"role": "user", "content": "Summarize the agent's result for speech in 1-2 short sentences."}], box2):
+                    yield ev(e)
+                if box2[0]:
+                    _history.append({"role": "user", "content": "Summarize the agent's result for speech in 1-2 short sentences."})
+                    _history.append({"role": "assistant", "content": box2[0][:4000]})
+                    del _history[:-24]
+                yield ev({"t": "done"})
             return
-        # "[[" appeared but no complete marker — flush the withheld sentences
-        for s in held:
-            yield ev({"t": "s", "text": s})
-        if buf.strip():
-            yield ev({"t": "s", "text": buf.strip()})
-        if not full.strip():
-            yield ev({"t": "err", "msg": "empty reply"})
-            return
-        _history.append({"role": "user", "content": query[:4000]})
-        _history.append({"role": "assistant", "content": full[:4000]})
-        del _history[:-24]
-        yield ev({"t": "done"})
+        if full.strip():
+            _history.append({"role": "user", "content": query[:4000]})
+            _history.append({"role": "assistant", "content": full[:4000]})
+            del _history[:-24]
+            yield ev({"t": "done"})
 
     return StreamingResponse(generate(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

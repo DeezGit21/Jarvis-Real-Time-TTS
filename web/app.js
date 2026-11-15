@@ -131,7 +131,7 @@ function addMsg(role, text) {
   div.className = 'msg ' + role
   const who = document.createElement('div')
   who.className = 'who'
-  who.textContent = role === 'you' ? 'you' : 'jarvis'
+  who.textContent = role === 'you' ? 'you' : role === 'agent' ? 'agent' : 'jarvis'
   const t = document.createElement('div')
   t.className = 'text'
   t.textContent = text || ''
@@ -170,6 +170,7 @@ async function sendStream(text) {
   setState('thinking')
   Tts.ack(ACK_LINES[_ackI++ % ACK_LINES.length])
   let agentCmd = null
+  let agentResult = false
   let full = ''
   let added = false
   const upsert = t => {
@@ -204,12 +205,17 @@ async function sendStream(text) {
           Tts.enqueueSpeak(ev.text)
         } else if (ev.t === 'agent') {
           agentCmd = ev.cmd
+          addMsg('agent', '→ agent: ' + ev.cmd)
+        } else if (ev.t === 'agent_result') {
+          agentResult = true
+          addMsg('agent', '→ hermes: ' + ev.text.slice(0, 600))
         } else if (ev.t === 'err') {
           updateLast(full ? full + '\n[error] ' + ev.msg : '[error] ' + ev.msg)
         }
       }
     }
     if (!added && !agentCmd) addMsg('jarvis', full || '(no reply)')
+    if (agentResult && !full) setState('idle')  // summary turn failed to speak
   } catch (e) {
     const msg = (e && e.name === 'AbortError') ? '[stopped]' : '[error] ' + ((e && e.message) || 'voice chat failed')
     updateLast(msg)
@@ -217,7 +223,7 @@ async function sendStream(text) {
     return
   } finally {
     aborter = null
-    if (agentCmd) {
+    if (agentCmd && !agentResult) {
       Tts.stop()
       setState('idle')
       addMsg('jarvis', '→ action handed to host agent: ' + agentCmd)

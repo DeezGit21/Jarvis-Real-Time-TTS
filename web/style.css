@@ -41,6 +41,7 @@ h1 { font-size: 22px; letter-spacing: 6px; color: var(--accent); font-weight: 60
 .msg .who { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
 .msg.you { align-self: flex-end; text-align: right; }
 .msg.err { color: #e05b5b; font-size: 13px; }
+.msg.agent { color: var(--dim); font-size: 12px; }
 .msg .text { white-space: pre-wrap; }
 .msg .text .cursor { color: var(--accent); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0 } }

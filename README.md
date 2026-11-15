@@ -47,12 +47,16 @@ like the voice, that's where it gets superpowers.
    response from edge-tts. The browser's `Audio` element starts playing while
    chunks are still arriving, so first sound lands well under a second.
    Sentences play back-to-back with no gaps between them.
-5. **Action hold-back (`[[agent]]`).** If the model decides the request needs
-   a *real action* (run a script, restart a service) instead of an answer, it
-   replies with exactly `[[agent]] <command>`. Those sentences are **withheld
-   from speech** — even mid-stream, before the marker is complete — and
-   surfaced as a `{t:'agent'}` event for a host agent to execute. Jarvis never
-   reads a command out loud.
+5. **Action execution (`[[agent]]`).** If the model decides the request needs
+   a *real action* (run a script, restart a service, check a URL) instead of
+   an answer, it replies with exactly `[[agent]] <command>`. Those sentences
+   are **withheld from speech** — even mid-stream, before the marker is
+   complete — and the command is executed locally by the Hermes one-shot
+   agent (`hermes -z <instruction>`, full toolset, local file access). The
+   agent's report comes back as `{t:'agent_result'}`, is fed into the
+   conversation, and a second turn has Jarvis **speak a 1–2 sentence summary
+   of the outcome**. Jarvis never reads a command out loud; `HERMES_AGENT=0`
+   falls back to emitting `{t:'agent'}` for an external host to handle.
 6. **Barge-in.** `Esc` or the stop button kills both the in-flight stream and
    the speech queue cleanly; the next turn starts fresh.
 7. **Rolling memory.** The last 24 turns survive across requests server-side;
@@ -102,7 +106,7 @@ curl -o test.mp3 "http://localhost:8899/tts?text=Right%20away%2C%20sir"
 
 | Endpoint | What it does |
 |---|---|
-| `POST /voice/chat {query}` | NDJSON stream: `{t:'s',text}` per sentence, `{t:'agent',cmd}`, `{t:'err',msg}`, `{t:'done'}` |
+| `POST /voice/chat {query}` | NDJSON stream: `{t:'s',text}` per sentence, `{t:'agent',cmd}`, `{t:'agent_result',text}`, `{t:'err',msg}`, `{t:'done'}` |
 | `GET /tts?text=...` | Streaming audio. edge-tts by default; `provider=gemini` uses the style-prompted JARVIS British-butler voice (needs `GEMINI_API_KEY`) |
 | `POST /voice/reset` | Clear rolling conversation history |
 | `GET /healthz` | Liveness + current model |
@@ -117,6 +121,10 @@ curl -o test.mp3 "http://localhost:8899/tts?text=Right%20away%2C%20sir"
 | `JARVIS_PERSONA` | `the operator` | who the assistant serves |
 | `TTS_VOICE` / `TTS_RATE` | `en-GB-RyanNeural` / `+4%` | edge voice |
 | `GEMINI_TTS_VOICE` | `Charon` | gemini voice |
+| `HERMES_AGENT` | `1` | when Jarvis emits `[[agent]] <cmd>`, run it locally via the Hermes one-shot agent (`hermes -z <cmd>`) and feed the report back so Jarvis speaks a summary. `0` = hand-off-only |
+| `HERMES_BIN` | `hermes` | hermes CLI on PATH |
+| `HERMES_IN` | repo root | working directory Hermes runs in |
+| `HERMES_TIMEOUT` | `600` | seconds before the agent run is abandoned |
 
 ## Files
 
@@ -144,6 +152,12 @@ web/style.css   dark console styling
 - **Cache trap when testing TTS changes.** Audio is cached by
   `sha1(provider|voice|text)`; the same test text keeps serving the old cached
   format and masks your fix. Test with fresh text.
+- **`[[agent]]` commands actually execute now.** When Jarvis hands off, the
+  server runs `hermes -z "<instruction>"` (the Hermes one-shot agent — full
+  local toolset, runs in `HERMES_IN`), emits `{t:'agent_result',text}` with the
+  report, and streams a second turn so Jarvis speaks a 1–2 sentence summary of
+  the outcome. The command is an *instruction*, not a shell command — Hermes
+  decides how to perform it. `HERMES_AGENT=0` returns to hand-off-only.
 - The mic leg cannot be tested headlessly (SpeechRecognition needs real
   audio); everything else is testable with curl.
 
